@@ -384,11 +384,11 @@ function toolsFor(useTools){
   if(state.settings.useUrl && !urlToolDisabled) t.push({url_context:{}});
   return t;
 }
-async function callGemini({system, contents, tools, onText, signal}){
-  const s = state.settings;
+async function callGemini({system, contents, tools, onText, signal, model}){
+  const s = state.settings; model = model || s.model;
   const body = {systemInstruction:{parts:[{text:system}]}, contents, generationConfig:{temperature:0.7}};
   if(tools && tools.length) body.tools = tools;
-  const res = await fetch(`${API}/models/${encodeURIComponent(s.model)}:streamGenerateContent?alt=sse`, {
+  const res = await fetch(`${API}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
     method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':s.apiKey}, body:JSON.stringify(body), signal
   });
   if(!res.ok){
@@ -495,31 +495,45 @@ async function send(text, opt={}){
   const m = {role:'model', text:'', sources:[], ts:Date.now(), pending:true};
   s.messages.push(m); s.updatedAt = Date.now();
   busy = true; render();
-  const run = async (retry) => {
+  const S = state.settings;
+  if(!S.models.length) await refreshModels(true);
+  const usable = n => !S.noFree.includes(n) && !/^gemini-[12]\./.test(n) && !/pro/.test(n);
+  const models = [S.model, ...S.models.filter(n => n !== S.model)].filter(usable).slice(0, 4);
+  const full = toolsFor(true), searchOnly = full.filter(t => !t.url_context);
+  const variants = [{tools:full, note:''}];
+  if(searchOnly.length !== full.length) variants.push({tools:searchOnly, note:'（Webページ直接読み込みなし）'});
+  const plan = [];
+  for(const mo of models) for(const v of variants) plan.push({model:mo, ...v});
+  if(full.length && models.length) plan.push({model:models[0], tools:[], note:'⚠ 検索ツールが使えなかったため、検索なし（AIの知識のみ・古い/不正確な可能性あり）で回答しています。'});
+  const log = []; const dead = new Set(); let ok = null;
+  for(const a of plan){
+    if(dead.has(a.model)) continue;
     m.text = ''; abortCtl = new AbortController();
     try{
-      const r = await callGemini({system:systemPrompt(s), contents:buildContents(s.messages), tools:toolsFor(true), signal:abortCtl.signal,
+      const r = await callGemini({model:a.model, system:systemPrompt(s), contents:buildContents(s.messages), tools:a.tools, signal:abortCtl.signal,
         onText: t => { m.text += t; updateBubble(m); }});
-      m.sources = r.sources;
+      m.sources = r.sources; ok = a; break;
     }catch(e){
-      if(e.name === 'AbortError'){ m.text += m.text ? '\n\n（停止しました）' : ''; if(!m.text) m.error = '停止しました'; return; }
-      if(!m.text && e.status === 400 && state.settings.useUrl && !urlToolDisabled){ urlToolDisabled = true; toast('このモデルはWebページ直接読み込みに非対応のため、検索のみで続けます'); return run(retry + 1); }
-      if(!m.text && (e.status === 429 || e.status === 404) && retry < 40){
-        const S = state.settings;
-        failedModels.add(S.model);
-        if(e.status === 404 || isNoFree(e.message)){ if(!S.noFree.includes(S.model)) S.noFree.push(S.model); }
-        if(!S.models.length) await refreshModels(true);
-        const next = S.models.find(n => !failedModels.has(n) && !S.noFree.includes(n));
-        if(next){ state.settings.model = next; save(); toast('上限/非対応のため ' + next + ' に切り替えて再試行'); return run(retry + 1); }
-      }
-      let hint = '';
-      if(e.status === 429) hint = '\n→ 無料で通るモデルが見つかりませんでした。設定の「モデル診断」で確認してください。または上限到達のため1分〜1日待つか、AI Studioで課金設定（Tier 1）を検討してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
-      else if(e.status === 400 || e.status === 403) hint = '\n→ APIキーやモデル設定を確認してください。';
-      else if(e.message.includes('Failed to fetch')) hint = '\n→ ネット接続を確認してください。';
-      m.error = e.message + hint;
+      if(e.name === 'AbortError'){ if(m.text) m.text += '\n\n（停止しました）'; else m.error = '停止しました'; ok = 'abort'; break; }
+      if(m.text){ m.error = e.message; ok = 'partial'; break; }
+      const toolLbl = a.tools.length ? a.tools.map(t => Object.keys(t)[0]).join('+') : 'ツールなし';
+      log.push(`${a.model} [${toolLbl}] → ${e.message.split('\n')[0].slice(0, 160)}`);
+      if(e.status === 404 || (e.status === 429 && isNoFree(e.message) && !a.tools.length)){ dead.add(a.model); if(!S.noFree.includes(a.model)) S.noFree.push(a.model); }
+      else if(e.status === 429 && isNoFree(e.message) && /generate_content_free_tier/.test(e.message)){ dead.add(a.model); if(!S.noFree.includes(a.model)) S.noFree.push(a.model); }
+      else if(e.status === 403 || e.message.includes('Failed to fetch')){ break; }
     }
-  };
-  await run(0);
+  }
+  if(ok && typeof ok === 'object'){
+    if(S.model !== ok.model){ S.model = ok.model; toast(ok.model + ' で回答しました'); }
+    if(ok.note) m.note = ok.note;
+    if(ok.tools.length < full.length && ok.tools.length) urlToolDisabled = true;
+  }else if(!ok){
+    let hint = '';
+    if(log.some(l => l.includes('429'))) hint = '\n→ 上限到達の可能性。時間をおくか、設定の「モデル診断」を実行してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
+    else if(log.some(l => l.includes('403'))) hint = '\n→ APIキーを確認してください。';
+    else if(log.some(l => l.includes('Failed to fetch'))) hint = '\n→ ネット接続を確認してください。';
+    m.error = '回答できませんでした。試した内容：\n' + log.join('\n') + hint;
+  }
   m.pending = false; busy = false; abortCtl = null;
   const st = m.text.match(STATUS_RE);
   if(st){ if(st[1] === 'NOT_GAME') s.status = 'excluded'; else if(st[1] === 'GAME_OK') s.status = 'ok'; }
@@ -587,6 +601,7 @@ function modelInner(m){
   let h = '';
   if(topic || m.pending) h += `<div class="meta">${topic ? `<span class="tag">観点: ${esc(topic)}</span>` : ''}${m.pending ? '<span>調査・回答中…</span>' : ''}</div>`;
   h += `<div class="${m.pending ? 'typing' : ''}">${t ? md(t) : ''}</div>`;
+  if(m.note) h += `<div class="hint">${esc(m.note)}</div>`;
   if(m.error) h += `<div class="err">⚠ ${esc(m.error)}</div>`;
   if(m.sources && m.sources.length) h += `<div class="sources">出典：${m.sources.slice(0,10).map(x => `<a href="${esc(x.uri)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join('')}</div>`;
   return h;
