@@ -348,6 +348,12 @@ function systemPrompt(s){
 # ユーザーのプロフィール（本人がこれまでに話した内容）
 ${state.settings.profile}`;
 }
+const NOSEARCH_RULE = `
+
+# 【今回だけの緊急ルール】検索ツールが使えない
+- 今回は検索もWebページ読み込みもできない。【公式】【報道】【口コミ】ラベルは使用禁止。事実はすべて【未確認】ラベルにする。
+- 人名・作品名・年号・数字など、確信のない固有情報は書かない。曖昧なら「公式サイトで要確認」と書く。
+- 社名の由来・理念・方針など公式サイトの文言は推測で作らない。代わりにユーザーに「公式サイトの該当ページの文章を貼ってくれれば分析する」と頼む。`;
 const kickoff = name => `企業名「${name}」で企業研究の壁打ちを始めたい。まずゲーム企業かどうか確認して。ゲーム企業なら、2〜3文の企業概要のあと、最初の観点を提示して私に問いかけて。`;
 
 const NOTES_SYS = `あなたは議事録係。以下の「壁打ちログ」から、別のAIアシスタント（Claude）に引き継ぐための共有メモをMarkdownで作る。
@@ -510,7 +516,7 @@ async function send(text, opt={}){
     if(dead.has(a.model)) continue;
     m.text = ''; abortCtl = new AbortController();
     try{
-      const r = await callGemini({model:a.model, system:systemPrompt(s), contents:buildContents(s.messages), tools:a.tools, signal:abortCtl.signal,
+      const r = await callGemini({model:a.model, system:systemPrompt(s) + (full.length && !a.tools.length ? NOSEARCH_RULE : ''), contents:buildContents(s.messages), tools:a.tools, signal:abortCtl.signal,
         onText: t => { m.text += t; updateBubble(m); }});
       m.sources = r.sources; ok = a; break;
     }catch(e){
@@ -525,7 +531,7 @@ async function send(text, opt={}){
   }
   if(ok && typeof ok === 'object'){
     if(S.model !== ok.model){ S.model = ok.model; toast(ok.model + ' で回答しました'); }
-    if(ok.note) m.note = ok.note;
+    if(ok.note) m.note = ok.note + (log.length ? '\n（失敗した試行）\n' + log.join('\n') : '');
     if(ok.tools.length < full.length && ok.tools.length) urlToolDisabled = true;
   }else if(!ok){
     let hint = '';
@@ -601,7 +607,7 @@ function modelInner(m){
   let h = '';
   if(topic || m.pending) h += `<div class="meta">${topic ? `<span class="tag">観点: ${esc(topic)}</span>` : ''}${m.pending ? '<span>調査・回答中…</span>' : ''}</div>`;
   h += `<div class="${m.pending ? 'typing' : ''}">${t ? md(t) : ''}</div>`;
-  if(m.note) h += `<div class="hint">${esc(m.note)}</div>`;
+  if(m.note) h += `<div class="hint" style="white-space:pre-wrap">${esc(m.note)}</div>`;
   if(m.error) h += `<div class="err">⚠ ${esc(m.error)}</div>`;
   if(m.sources && m.sources.length) h += `<div class="sources">出典：${m.sources.slice(0,10).map(x => `<a href="${esc(x.uri)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join('')}</div>`;
   return h;
