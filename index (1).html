@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="壁打ちAI">
+<title>ゲーム企業研究 壁打ちAI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+:root{
+  --bg:#0f1115; --panel:#161920; --panel2:#1e222b; --line:#2b303b;
+  --text:#e9ebf1; --muted:#9aa3b2; --accent:#ff4d5e; --accent-weak:#ff4d5e22;
+  --gold:#ffd166; --ok:#3ecf8e; --user:#26324a; --danger:#ff6b6b;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;font-size:15px;line-height:1.7}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:#7cc4ff}
+.app{display:grid;grid-template-columns:270px 1fr;height:100vh;height:100dvh}
+/* sidebar */
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.brand{padding:16px 16px 10px;font-weight:800;letter-spacing:.04em;font-size:17px}
+.brand span{color:var(--accent)}
+.newbox{padding:0 12px 12px;display:flex;gap:6px}
+.newbox input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;white-space:nowrap}
+.btn:hover{border-color:#47506080;background:#252a35}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.small{padding:4px 9px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.list{flex:1;overflow:auto;padding:0 8px}
+.item{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;cursor:pointer;margin-bottom:2px}
+.item:hover{background:var(--panel2)}
+.item.active{background:var(--accent-weak);outline:1px solid #ff4d5e55}
+.item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .st{font-size:11px;padding:1px 6px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.item .st.ok{color:var(--ok);border-color:#3ecf8e66}
+.item .st.ng{color:var(--danger);border-color:#ff6b6b66}
+.item .del{opacity:0;background:none;border:none;color:var(--muted);padding:0 4px}
+.item:hover .del{opacity:1}
+.sidefoot{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px}
+/* main */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.top{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.top .title{font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu{display:none}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line)}
+.chip{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted);background:none}
+.chip.done{color:var(--gold);border-color:#ffd16677}
+.chip.now{color:#fff;background:var(--accent);border-color:var(--accent)}
+.msgs{flex:1;overflow:auto;padding:18px 16px 8px}
+.msg{max-width:860px;margin:0 auto 14px;display:flex}
+.msg.user{justify-content:flex-end}
+.bubble{border-radius:12px;padding:10px 14px;max-width:100%;overflow-wrap:anywhere}
+.msg.user .bubble{background:var(--user);white-space:pre-wrap;max-width:80%}
+.msg.model .bubble{background:var(--panel);border:1px solid var(--line);width:100%}
+.bubble p{margin:.4em 0}
+.bubble ul,.bubble ol{margin:.3em 0;padding-left:1.4em}
+.bubble h1,.bubble h2,.bubble h3{font-size:1em;margin:.6em 0 .3em}
+.bubble code{background:#0006;padding:1px 4px;border-radius:4px}
+.meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:4px}
+.tag{color:var(--gold);border:1px solid #ffd16655;border-radius:99px;padding:0 8px}
+.sources{margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);font-size:12px}
+.sources a{display:inline-block;margin:2px 8px 2px 0;color:#7cc4ff;text-decoration:none}
+.sources a:hover{text-decoration:underline}
+.sys{max-width:860px;margin:0 auto 14px;text-align:center;font-size:12px;color:var(--muted)}
+.err{color:var(--danger);font-size:13px;white-space:pre-wrap}
+.banner{max-width:860px;margin:0 auto 14px;padding:10px 14px;border-radius:10px;border:1px solid #ff6b6b77;background:#ff6b6b14;color:#ffc9c9}
+.typing::after{content:"▍";animation:blink 1s steps(2) infinite;color:var(--accent)}
+@keyframes blink{50%{opacity:0}}
+.quick{display:flex;gap:6px;flex-wrap:wrap;padding:6px 16px 0;max-width:892px;margin:0 auto;width:100%}
+.composer{padding:8px 16px 14px;max-width:892px;margin:0 auto;width:100%}
+.inbox{display:flex;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
+.inbox textarea{flex:1;resize:none;border:none;background:transparent;outline:none;max-height:220px;min-height:24px;padding:4px 6px}
+.mic{width:44px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);font-size:18px}
+.mic.on{background:var(--accent);border-color:var(--accent);animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #ff4d5e88}70%{box-shadow:0 0 0 10px #ff4d5e00}100%{box-shadow:0 0 0 0 #ff4d5e00}}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+/* welcome */
+.welcome{max-width:720px;margin:6vh auto 0;padding:0 16px}
+.welcome h2{margin:0 0 8px}
+.welcome ol{color:var(--muted);padding-left:1.3em}
+/* modal */
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+.modal.show{display:flex}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(760px,100%);max-height:92vh;overflow:auto;padding:18px 20px}
+.card h3{margin:0 0 10px}
+.field{margin:12px 0}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+.field input[type=text],.field input[type=password],.field select,.field textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.field textarea{min-height:220px;font-size:13px;line-height:1.6}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.check{display:flex;gap:8px;align-items:center;margin:6px 0}
+.notes{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:120px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000d;border:1px solid var(--line);padding:9px 16px;border-radius:10px;font-size:14px;z-index:30;display:none;max-width:90vw}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;inset:0 20% 0 0;z-index:15;transform:translateX(-100%);transition:transform .2s}
+  .side.open{transform:none}
+  .menu{display:inline-block}
+  .msg.user .bubble{max-width:92%}
+  .side{padding-top:env(safe-area-inset-top)}
+  .top{padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top))}
+  .top .lbl{display:none}
+  .chips,.quick{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .chips::-webkit-scrollbar,.quick::-webkit-scrollbar{display:none}
+  .chip,.quick .btn{flex:0 0 auto}
+  .msgs{padding:12px 10px 6px}
+  .quick{padding:6px 10px 0}
+  .composer{padding:6px 10px calc(10px + env(safe-area-inset-bottom))}
+  .inbox textarea,.newbox input,.field input,.field select,.field textarea{font-size:16px}
+  .mic{width:52px;height:46px;font-size:22px}
+  .card{padding:14px}
+}
+.scrim{display:none}
+@media (max-width:760px){.side.open + .main .scrim{display:block;position:fixed;inset:0;background:#0007;z-index:14}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand">ゲーム企業研究 <span>壁打ちAI</span></div>
+    <div class="newbox">
+      <input id="newName" type="text" placeholder="企業名を入力" autocomplete="off">
+      <button class="btn primary" id="newBtn">開始</button>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="sidefoot">
+      <button class="btn small" id="shareAllBtn" title="全企業分の共有メモを1つの.mdにまとめて保存">Claude共有メモ(全件)</button>
+      <button class="btn small" id="exportBtn">バックアップ</button>
+      <button class="btn small" id="importBtn">復元</button>
+      <input type="file" id="importFile" accept=".json" hidden>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="scrim" id="scrim"></div>
+    <div class="top">
+      <button class="btn small menu" id="menuBtn">☰</button>
+      <div class="title" id="title">ゲーム企業研究 壁打ちAI</div>
+      <button class="btn small" id="ttsBtn" title="AIの返答を読み上げる">🔈 読み上げOFF</button>
+      <button class="btn small" id="shareBtn" title="Claudeに共有">📤<span class="lbl"> Claudeに共有</span></button>
+      <button class="btn small" id="settingsBtn" title="設定">⚙<span class="lbl"> 設定</span></button>
+    </div>
+    <div class="chips" id="chips" hidden></div>
+    <div class="msgs" id="msgs"></div>
+    <div class="quick" id="quick" hidden>
+      <button class="btn small" data-q="次の観点に進みたい。">次の観点へ</button>
+      <button class="btn small" data-q="今の話をもっと深掘りして。">もっと深掘り</button>
+      <button class="btn small" data-q="今の話の出典と根拠をもう一度はっきり示して。">出典・根拠</button>
+      <button class="btn small" data-q="今の私の意見に、面接官ならどう突っ込む？厳しめに。">面接官ならどう突っ込む？</button>
+      <button class="btn small" data-q="ここまでの私の意見を整理して、まだ弱い点と次に考えるべきことを示して。">ここまでを整理</button>
+    </div>
+    <div class="composer" id="composer" hidden>
+      <div class="inbox">
+        <textarea id="input" rows="1" placeholder="あなたの意見を入力（🎤で音声入力）"></textarea>
+        <button class="mic" id="micBtn" title="音声入力">🎤</button>
+        <button class="btn primary" id="sendBtn">送信</button>
+      </div>
+      <div class="hint" id="hint">Enterで送信 / Shift+Enterで改行</div>
+    </div>
+  </main>
+</div>
+
+<!-- settings -->
+<div class="modal" id="settingsModal">
+  <div class="card">
+    <h3>設定</h3>
+    <div class="field">
+      <label>Gemini APIキー（Google AI Studio で無料発行：https://aistudio.google.com/apikey ）</label>
+      <div class="row">
+        <input id="apiKey" type="password" placeholder="AIza..." style="flex:1">
+        <button class="btn small" id="showKey">表示</button>
+      </div>
+      <div class="hint">キーはこのブラウザ内（localStorage）にだけ保存され、Googleのサーバー以外には送信されません。</div>
+    </div>
+    <div class="field">
+      <label>モデル</label>
+      <div class="row">
+        <select id="model" style="flex:1"></select>
+        <button class="btn small" id="refreshModels">一覧を取得</button>
+      </div>
+      <div class="hint">上限エラー(429)が出たモデルは自動で次のモデルに切り替わります。Geminiアプリの学生プランはAPIの無料枠とは別枠です。</div>
+    </div>
+    <div class="field">
+      <label>調査ツール</label>
+      <div class="check"><input type="checkbox" id="useSearch"><span>Google検索で調べる（評判・ニュース・作品など）</span></div>
+      <div class="check"><input type="checkbox" id="useUrl"><span>Webページを直接読む（公式サイトの文章など。モデルが非対応なら自動でOFF）</span></div>
+    </div>
+    <div class="field">
+      <label>音声</label>
+      <div class="check"><input type="checkbox" id="autoSendVoice"><span>🎤を止めたら自動で送信する</span></div>
+    </div>
+    <div class="field">
+      <label>あなたのプロフィール（AIに毎回渡されます。このブラウザ内だけに保存）</label>
+      <textarea id="profile"></textarea>
+      <div class="row" style="margin-top:6px"><button class="btn small" id="resetProfile">初期プロフィールに戻す</button></div>
+    </div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" id="closeSettings">キャンセル</button>
+      <button class="btn primary" id="saveSettings">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- share -->
+<div class="modal" id="shareModal">
+  <div class="card">
+    <h3>Claudeに共有するメモ</h3>
+    <div class="hint" style="margin-bottom:8px">この会話から「分かった企業の特徴」「あなたの意見」「あなた自身について新しく分かったこと」をまとめます。保存した .md を Claude のチャットに添付して「覚えて」と送ると、Claude 側でも共有されます。</div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn primary" id="genNotes">この企業のメモを作る/更新</button>
+      <button class="btn" id="copyNotes">コピー</button>
+      <button class="btn" id="dlNotes">.mdで保存</button>
+      <button class="btn" id="toProfile" title="「あなた自身について新しく分かったこと」をプロフィールに追記し、次回以降の壁打ちに反映">プロフィールに反映</button>
+    </div>
+    <div class="notes bubble" id="notesView"><span class="hint">まだメモはありません。</span></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="closeShare">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const LS_KEY = 'gameco-kabeuchi-v1';
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+// 自動選択の優先順：flash（新しい版から）→ flash-lite → その他。preview/exp は後回し、pro は最後
+function rankModels(names){
+  const ver = n => { const m = n.match(/gemini-(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : (n.includes('latest') ? 99 : 0); };
+  const cls = n => /pro/.test(n) ? 3 : /flash-lite/.test(n) ? 1 : /flash/.test(n) ? 0 : 2;
+  const pre = n => /(preview|exp)/.test(n) ? 1 : 0;
+  return [...names].sort((a,b) => cls(a)-cls(b) || pre(a)-pre(b) || ver(b)-ver(a) || a.localeCompare(b));
+}
+const failedModels = new Set();
+const TOPICS = [
+  {name:'概要・理念', keys:['概要','理念','ビジョン','ミッション']},
+  {name:'作品・開発体制', keys:['作品','タイトル','開発体制','ジャンル']},
+  {name:'他社とのつながり', keys:['つながり','提携','親会社','グループ','協業','パブリッシャー']},
+  {name:'働き方・社風', keys:['働き方','社風','育成','制度','文化']},
+  {name:'評判', keys:['評判','口コミ']},
+  {name:'プランナー採用', keys:['採用','募集','求める人物','選考']},
+  {name:'自分との接点・比較', keys:['接点','比較','競合','志望']},
+];
+
+const DEFAULT_PROFILE = `■ 基本情報（学校・学年・志望職種など）
+
+■ ゲーム業界を目指した理由
+
+■ 就活の軸・将来像
+
+■ 強み・弱み・得意なこと
+
+■ 企画の考え方
+
+■ 制作実績（作品名・人数・期間・自分の役割・工夫・結果）
+
+■ 経験・スキル・資格
+
+■ 趣味・好きなゲーム
+
+■ 就活の状況`;
+
+// ---------- state ----------
+let state = load();
+let busy = false;
+let abortCtl = null;
+let urlToolDisabled = false;
+
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(LS_KEY)); if(s && Array.isArray(s.sessions)) return normalize(s); }catch(e){}
+  return normalize({});
+}
+function normalize(s){
+  s.settings = Object.assign({apiKey:'', model:'gemini-3.5-flash', models:[], useSearch:true, useUrl:true, autoSendVoice:false, tts:false, profile:DEFAULT_PROFILE}, s.settings||{});
+  s.sessions = s.sessions || [];
+  return s;
+}
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){ toast('保存に失敗: '+e.message); } }
+const $ = id => document.getElementById(id);
+const cur = () => state.sessions.find(s => s.id === state.currentId) || null;
+const today = () => new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function esc(t){ return String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function md(t){
+  try{ if(window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(t, {breaks:true})); }catch(e){}
+  return esc(t).replace(/\n/g,'<br>');
+}
+let toastTimer;
+function toast(t, ms=3500){ const el=$('toast'); el.textContent=t; el.style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none', ms); }
+
+// ---------- prompts ----------
+function systemPrompt(s){
+  return `あなたは「ゲーム企業研究の壁打ちパートナー」。話し相手は就職活動中のユーザー（プロフィールは末尾）。今日は${today()}。研究対象は「${s.company}」。
+
+# 最重要ルール
+## 1. 対象はゲーム企業のみ
+- 最初の応答では必ずGoogle検索で「${s.company}」を特定し、ゲーム企業かどうか判定する。
+- ゲーム企業 = 家庭用・PC・スマホ・アーケード等のゲームの開発／パブリッシング／受託開発、またはゲーム制作に直接関わる事業（ゲーム向けグラフィック・サウンド・デバッグ等の専業）を主力とする企業。
+- ゲーム企業でない場合：応答の1行目を [NOT_GAME] だけにし、2行目以降で理由を1〜2文。それ以上の分析は一切しない。
+- 同名・類似名の企業が複数あるときはゲーム企業を優先する。それでも判別できない場合は1行目を [AMBIGUOUS] にし、候補を挙げてユーザーに確認する。
+- ゲーム企業と確認できたら1行目を [GAME_OK] にする。2回目以降の応答ではタグは不要。
+- 会話の途中でも、ゲーム企業以外の企業の分析はしない（比較で社名を挙げるのはゲーム企業同士に限る）。
+
+## 2. 答えを先に出さない（壁打ちのループ）
+(A) 観点の提示：観点を1つだけ選び、調べた事実を3〜5点、簡潔に示す。各事実に【公式】【報道】【口コミ】【推測】のどれかのラベルを付ける。最後にユーザーへの具体的な問いを1つだけ投げる（例：「この理念のどの言葉に一番引っかかった？それはなぜ？」）。この段階で志望動機の答えや結論を書かない。
+(B) ユーザーの意見への評価：良い点／根拠が弱い・抽象的な点／見落としている事実や視点／面接官ならどう突っ込むか、を短く示す。ユーザーの経験や強みとつながりそうなときは、答えを書かずに「〇〇の経験とつながらない？」のようにヒントとして返す。最後に深掘りの問いを1つ投げるか、次の観点に進むかを提案する。
+(C) ユーザーが「まとめて」「ESにして」などと明示的に頼んだときだけ、まとめや文章の骨子を作る。その場合も本人の発言を素材にし、本人が言っていない経験や思いを作らない。
+
+## 3. 観点（目安の順番。ユーザーの希望があればそちらを優先）
+1. 概要・理念（企業理念・ビジョン・代表メッセージ。公式サイトの言葉は短く引用し、要点を要約）
+2. 作品・開発体制（主要タイトル、得意ジャンル、自社IPか受託か、プラットフォーム、開発規模、近年の動き）
+3. 他社とのつながり（親会社・子会社・グループ、資本提携、パブリッシャー／デベロッパー関係、共同開発や受託の実績）
+4. 働き方・社風（採用ページ、社員インタビュー、制度、育成、勤務地、チーム体制）
+5. 評判（ニュース、口コミサイト、ユーザー評価。口コミは偏りがあるので公式情報と区別する）
+6. プランナー採用（新卒プランナー職の有無、仕事内容、求める人物像、提出物や選考フロー）
+7. 自分との接点・比較（ユーザーの軸や経験との接点、他の応募企業との違い）
+
+## 4. 厳しく、正直に
+- ユーザーは「就活関係は厳しい目で見てほしい。なんでも肯定しないでほしい」と希望している。お世辞・迎合は禁止。甘い点ははっきり指摘する。人格は否定せず、改善の方向を示す。
+- 抽象的な言葉（「楽しそう」「雰囲気が良い」「ものづくりが好き」等）には「具体的には？」「根拠は？」「他社にも言えない？」と突っ込む。
+
+## 5. 情報の扱い
+- 検索で確認できた事実だけを事実として書く。分からないことは「確認できなかった」と言う。推測は【推測】と明示する。
+- 情報の日付に注意し、古い情報（3年以上前など）はその旨を書く。
+- 公式サイトの文章は長く引用せず、短い引用と要約にとどめる。
+
+## 6. 前提
+- ユーザーは基本的に応募企業のゲームを遊んだことがない（遊んだ場合は本人が言う）。プレイ経験を前提にした問いはしない。トレーラー、ストアページ、公式サイトで確認できることを手がかりにする。
+- ユーザーは音声入力で話すことがある。誤変換や話し言葉の崩れは意図を汲んで読む。
+
+## 7. 返答の形
+- 1回の返答は日本語で400字前後まで（事実の列挙は箇条書き可）。読み上げても聞きやすい長さにする。
+- すべての返答の最後の行に、今扱っている観点を【観点: 〇〇】の形で書く（〇〇は上の観点名）。
+
+# ユーザーのプロフィール（本人がこれまでに話した内容）
+${state.settings.profile}`;
+}
+const kickoff = name => `企業名「${name}」で企業研究の壁打ちを始めたい。まずゲーム企業かどうか確認して。ゲーム企業なら、2〜3文の企業概要のあと、最初の観点を提示して私に問いかけて。`;
+
+const NOTES_SYS = `あなたは議事録係。以下の「壁打ちログ」から、別のAIアシスタント（Claude）に引き継ぐための共有メモをMarkdownで作る。
+厳守：
+- 本人の発言（user）と、AIの調査・評価（model）を厳密に区別する。ユーザーが言っていないことをユーザーの考え・経験として書かない。
+- 企業の事実には、ログに出てきた出典（サイト名やURL）を残す。
+- 該当する内容がない見出しには「なし」と書く。
+- 前置きや後書きは書かず、次の形式だけを出力する。
+
+## 企業研究メモ：{企業名}（{日付}）
+### 判明した企業の特徴（出典つき）
+### 本人の意見・気づき（本人発言の要約）
+### 本人について新しく分かったこと（価値観・経験・志望度など、本人発言のみ）
+### 壁打ちで指摘された課題・弱い点
+### ES・面接に使えそうな材料
+### 未解決の問い・次に調べること`;
+
+// ---------- Gemini ----------
+function buildContents(msgs){
+  const out = [];
+  for(const m of msgs){
+    if(m.role === 'model' && (m.error || m.pending)) continue;
+    if(!m.text) continue;
+    const last = out[out.length-1];
+    if(last && last.role === m.role) last.parts[0].text += '\n\n' + m.text;
+    else out.push({role:m.role, parts:[{text:m.text}]});
+  }
+  return out;
+}
+function toolsFor(useTools){
+  if(!useTools) return [];
+  const t = [];
+  if(state.settings.useSearch) t.push({google_search:{}});
+  if(state.settings.useUrl && !urlToolDisabled) t.push({url_context:{}});
+  return t;
+}
+async function callGemini({system, contents, tools, onText, signal}){
+  const s = state.settings;
+  const body = {systemInstruction:{parts:[{text:system}]}, contents, generationConfig:{temperature:0.7}};
+  if(tools && tools.length) body.tools = tools;
+  const res = await fetch(`${API}/models/${encodeURIComponent(s.model)}:streamGenerateContent?alt=sse`, {
+    method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':s.apiKey}, body:JSON.stringify(body), signal
+  });
+  if(!res.ok){
+    const t = await res.text(); let msg = t;
+    try{ msg = JSON.parse(t).error.message; }catch(e){}
+    const err = new Error(`${res.status}: ${msg}`); err.status = res.status; throw err;
+  }
+  const reader = res.body.getReader(); const dec = new TextDecoder();
+  let buf = '', got = false, finish = '';
+  const sources = new Map();
+  const handle = j => {
+    if(j.error) throw new Error(j.error.message || 'APIエラー');
+    const c = j.candidates && j.candidates[0]; if(!c) return;
+    for(const p of (c.content && c.content.parts) || []){
+      if(p.text && !p.thought){ got = true; onText(p.text); }
+    }
+    const gm = c.groundingMetadata;
+    if(gm && gm.groundingChunks) for(const ch of gm.groundingChunks){
+      if(ch.web && ch.web.uri && !sources.has(ch.web.uri)) sources.set(ch.web.uri, ch.web.title || ch.web.uri);
+    }
+    if(c.finishReason) finish = c.finishReason;
+  };
+  while(true){
+    const {value, done} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value, {stream:true});
+    const lines = buf.split(/\r?\n/); buf = lines.pop();
+    for(const line of lines){
+      if(!line.startsWith('data:')) continue;
+      const d = line.slice(5).trim(); if(!d) continue;
+      try{ handle(JSON.parse(d)); }catch(e){ if(e instanceof SyntaxError) continue; throw e; }
+    }
+  }
+  if(buf.startsWith('data:')){ try{ handle(JSON.parse(buf.slice(5).trim())); }catch(e){} }
+  if(!got && finish && finish !== 'STOP') throw new Error(`回答が生成されませんでした（理由: ${finish}）`);
+  return {sources:[...sources].map(([uri,title]) => ({uri,title}))};
+}
+async function refreshModels(silent){
+  const s = state.settings;
+  if(!s.apiKey){ if(!silent) toast('先にAPIキーを入力してください'); return false; }
+  try{
+    const res = await fetch(`${API}/models?pageSize=1000`, {headers:{'x-goog-api-key':s.apiKey}});
+    if(!res.ok) throw new Error(res.status + ': ' + (await res.text()).slice(0,200));
+    const j = await res.json();
+    const names = (j.models||[])
+      .filter(m => (m.supportedGenerationMethods||[]).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//,''))
+      .filter(n => n.startsWith('gemini') && !/(image|tts|embed|live|audio|native|robotics|computer)/.test(n));
+    if(!names.length) throw new Error('使えるモデルが見つかりません');
+    s.models = rankModels(names);
+    if(!names.includes(s.model)) s.model = s.models[0];
+    save(); fillModelSelect();
+    if(!silent) toast('モデル一覧を更新しました（' + names.length + '件）');
+    return true;
+  }catch(e){ if(!silent) toast('モデル一覧の取得に失敗: ' + e.message, 6000); return false; }
+}
+
+// ---------- chat ----------
+const STATUS_RE = /^\s*\[(NOT_GAME|GAME_OK|AMBIGUOUS)\]\s*/;
+const TOPIC_RE = /\n?\s*【観点[:：]\s*([^】]+)】\s*$/;
+function splitDisplay(text){
+  let t = text.replace(STATUS_RE, '');
+  let topic = null; const m = t.match(TOPIC_RE);
+  if(m){ topic = m[1].trim(); t = t.replace(TOPIC_RE, ''); }
+  return {t, topic};
+}
+function topicIndex(label){
+  if(!label) return -1;
+  let i = TOPICS.findIndex(x => label.includes(x.name)); if(i >= 0) return i;
+  return TOPICS.findIndex(x => x.keys.some(k => label.includes(k)));
+}
+async function send(text, opt={}){
+  const s = cur(); if(!s || busy) return;
+  if(s.status === 'excluded'){ toast('ゲーム企業ではないため、この企業は対象外です'); return; }
+  if(!state.settings.apiKey){ openSettings(); toast('APIキーを設定してください'); return; }
+  speechSynthesis && speechSynthesis.cancel();
+  s.messages.push({role:'user', text, hidden:!!opt.hidden, label:opt.label||null, ts:Date.now()});
+  const m = {role:'model', text:'', sources:[], ts:Date.now(), pending:true};
+  s.messages.push(m); s.updatedAt = Date.now();
+  busy = true; render();
+  const run = async (retry) => {
+    m.text = ''; abortCtl = new AbortController();
+    try{
+      const r = await callGemini({system:systemPrompt(s), contents:buildContents(s.messages), tools:toolsFor(true), signal:abortCtl.signal,
+        onText: t => { m.text += t; updateBubble(m); }});
+      m.sources = r.sources;
+    }catch(e){
+      if(e.name === 'AbortError'){ m.text += m.text ? '\n\n（停止しました）' : ''; if(!m.text) m.error = '停止しました'; return; }
+      if(!m.text && e.status === 400 && state.settings.useUrl && !urlToolDisabled){ urlToolDisabled = true; toast('このモデルはWebページ直接読み込みに非対応のため、検索のみで続けます'); return run(retry + 1); }
+      if(!m.text && (e.status === 429 || e.status === 404) && retry < 6){
+        failedModels.add(state.settings.model);
+        if(!state.settings.models.length) await refreshModels(true);
+        const next = state.settings.models.find(n => !failedModels.has(n));
+        if(next){ state.settings.model = next; save(); toast('上限/非対応のため ' + next + ' に切り替えて再試行'); return run(retry + 1); }
+      }
+      let hint = '';
+      if(e.status === 429) hint = '\n→ 使えるモデルすべてで無料枠の上限に達しました。1分〜1日待つか、AI Studioで課金設定（Tier 1）を検討してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
+      else if(e.status === 400 || e.status === 403) hint = '\n→ APIキーやモデル設定を確認してください。';
+      else if(e.message.includes('Failed to fetch')) hint = '\n→ ネット接続を確認してください。';
+      m.error = e.message + hint;
+    }
+  };
+  await run(0);
+  m.pending = false; busy = false; abortCtl = null;
+  const st = m.text.match(STATUS_RE);
+  if(st){ if(st[1] === 'NOT_GAME') s.status = 'excluded'; else if(st[1] === 'GAME_OK') s.status = 'ok'; }
+  const {topic} = splitDisplay(m.text);
+  if(topic){ m.topic = topic; const i = topicIndex(topic); if(i >= 0){ s.topicNow = i; if(!s.topics.includes(i)) s.topics.push(i); } }
+  save(); render();
+  if(state.settings.tts && m.text && !m.error) speak(splitDisplay(m.text).t);
+}
+function sendFromInput(){
+  const v = $('input').value.trim(); if(!v || busy) return;
+  $('input').value = ''; autoGrow(); send(v);
+}
+function newSession(name){
+  name = name.trim(); if(!name) return;
+  const s = {id:uid(), company:name, status:'checking', messages:[], topics:[], topicNow:-1, notes:'', createdAt:Date.now(), updatedAt:Date.now()};
+  state.sessions.unshift(s); state.currentId = s.id; save(); render();
+  $('side').classList.remove('open');
+  send(kickoff(name), {hidden:true, label:`🔎「${name}」の調査を開始`});
+}
+
+// ---------- render ----------
+function render(){
+  renderList();
+  const s = cur();
+  $('title').textContent = s ? s.company : 'ゲーム企業研究 壁打ちAI';
+  $('ttsBtn').textContent = state.settings.tts ? '🔊 読み上げON' : '🔈 読み上げOFF';
+  const box = $('msgs');
+  if(!s){
+    $('chips').hidden = $('quick').hidden = $('composer').hidden = true;
+    box.innerHTML = `<div class="welcome">
+      <h2>企業名を入れて、壁打ちを始めよう</h2>
+      <p>左上に応募先のゲーム企業名を入れて「開始」。AIが公式サイト・作品・他社とのつながり・評判を調べ、<b>特徴の提示 → あなたの意見 → 評価 → あなたの意見</b> の順で壁打ちします。</p>
+      <ol>
+        <li>初回は「設定」で Gemini APIキー（無料）を入れる</li>
+        <li>企業名を入れて開始（ゲーム企業以外は対象外として止まります）</li>
+        <li>🎤 で話しかけてもOK</li>
+        <li>終わったら「Claudeに共有」でメモを作り、.md を Claude のチャットに添付</li>
+      </ol>
+      ${state.settings.apiKey ? '' : '<p><button class="btn primary" onclick="openSettings()">APIキーを設定する</button></p>'}
+      ${profileEmpty() ? '<p class="hint">⚠ プロフィールが未入力です。「設定」のプロフィール欄に自分の情報を貼り付けると、経験や強みに沿った壁打ちになります。</p>' : ''}
+    </div>`;
+    return;
+  }
+  $('chips').hidden = false;
+  $('chips').innerHTML = TOPICS.map((t,i) => `<button class="chip ${s.topicNow===i?'now':(s.topics.includes(i)?'done':'')}" data-i="${i}">${t.name}</button>`).join('');
+  const excluded = s.status === 'excluded';
+  $('quick').hidden = excluded || s.status !== 'ok';
+  $('composer').hidden = excluded;
+  let html = '';
+  for(const m of s.messages){
+    if(m.role === 'user'){
+      if(m.hidden) html += `<div class="sys">${esc(m.label || '（指示を送信）')}</div>`;
+      else html += `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+    }else{
+      html += `<div class="msg model"><div class="bubble" data-ts="${m.ts}">${modelInner(m)}</div></div>`;
+    }
+  }
+  if(excluded) html += `<div class="banner">「${esc(s.company)}」はゲーム企業ではないと判定されたため、分析を終了しました。社名の表記ゆれの場合は、正式名称で新しく開始してください。</div>`;
+  box.innerHTML = html;
+  box.scrollTop = box.scrollHeight;
+  $('sendBtn').textContent = busy ? '停止' : '送信';
+}
+function modelInner(m){
+  const {t, topic} = splitDisplay(m.text);
+  let h = '';
+  if(topic || m.pending) h += `<div class="meta">${topic ? `<span class="tag">観点: ${esc(topic)}</span>` : ''}${m.pending ? '<span>調査・回答中…</span>' : ''}</div>`;
+  h += `<div class="${m.pending ? 'typing' : ''}">${t ? md(t) : ''}</div>`;
+  if(m.error) h += `<div class="err">⚠ ${esc(m.error)}</div>`;
+  if(m.sources && m.sources.length) h += `<div class="sources">出典：${m.sources.slice(0,10).map(x => `<a href="${esc(x.uri)}" target="_blank" rel="noopener">${esc(x.title)}</a>`).join('')}</div>`;
+  return h;
+}
+let rafPending = false;
+function updateBubble(m){
+  if(rafPending) return; rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    const el = document.querySelector(`.bubble[data-ts="${m.ts}"]`); if(!el) return;
+    el.innerHTML = modelInner(m);
+    const box = $('msgs'); if(box.scrollHeight - box.scrollTop - box.clientHeight < 200) box.scrollTop = box.scrollHeight;
+  });
+}
+function renderList(){
+  const st = {checking:['確認中',''], ok:['ゲーム企業','ok'], excluded:['対象外','ng']};
+  $('list').innerHTML = state.sessions.map(s => `<div class="item ${s.id===state.currentId?'active':''}" data-id="${s.id}">
+    <span class="nm">${esc(s.company)}</span><span class="st ${st[s.status][1]}">${st[s.status][0]}</span>
+    <button class="del" data-del="${s.id}" title="削除">✕</button></div>`).join('') || '<div class="hint" style="padding:8px 10px">まだ企業がありません</div>';
+}
+
+// ---------- notes (share with Claude) ----------
+async function genNotes(){
+  const s = cur(); if(!s){ toast('企業を選んでください'); return; }
+  if(s.status === 'excluded'){ toast('対象外の企業です'); return; }
+  const log = s.messages.filter(m => !m.hidden && m.text && !m.error).map(m => {
+    const who = m.role === 'user' ? 'ユーザー' : 'AI';
+    const src = m.sources && m.sources.length ? '\n（出典: ' + m.sources.map(x => x.title + ' ' + x.uri).join(' / ') + '）' : '';
+    return `【${who}】\n${splitDisplay(m.text).t}${src}`;
+  }).join('\n\n');
+  if(!log){ toast('まだ会話がありません'); return; }
+  const view = $('notesView'); view.innerHTML = '<span class="typing">メモを作成中</span>';
+  let out = '';
+  try{
+    await callGemini({system:NOTES_SYS, contents:[{role:'user', parts:[{text:`企業名：${s.company}\n日付：${today()}\n\n# 壁打ちログ\n${log}`}]}], tools:[],
+      onText: t => { out += t; view.innerHTML = md(out); }});
+    s.notes = out.trim(); s.notesAt = Date.now(); save(); showNotes();
+    toast('メモを作成しました');
+  }catch(e){ view.innerHTML = `<div class="err">⚠ ${esc(e.message)}</div>`; }
+}
+function showNotes(){
+  const s = cur();
+  $('notesView').innerHTML = s && s.notes ? md(s.notes) : '<span class="hint">まだメモはありません。「この企業のメモを作る/更新」を押してください。</span>';
+}
+const CLAUDE_HEAD = '> Claudeへ：これはGemini製の「ゲーム企業研究 壁打ちAI」で行った企業研究の共有メモです。内容を確認し、私について新しく分かったことや企業研究の内容を覚えておいてください。\n\n';
+function download(name, text, type='text/markdown'){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:type+';charset=utf-8'}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0,10);
+function safeName(t){ return t.replace(/[\\/:*?"<>|\s]+/g,'_'); }
+function appendToProfile(){
+  const s = cur(); if(!s || !s.notes){ toast('先にメモを作ってください'); return; }
+  const m = s.notes.match(/###\s*本人について新しく分かったこと[^\n]*\n([\s\S]*?)(?=\n#{2,3}\s|$)/);
+  const body = m ? m[1].trim() : '';
+  if(!body || /^[-・\s]*なし[。\s]*$/.test(body)){ toast('プロフィールに追記する新情報はありません'); return; }
+  if(!confirm('次の内容をプロフィールに追記します。よろしいですか？\n\n' + body)) return;
+  state.settings.profile += `\n\n■ 壁打ちで分かったこと（${s.company}／${today()}）\n${body}`;
+  save(); toast('プロフィールに追記しました（設定から編集できます）');
+}
+
+// ---------- voice ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, baseText = '', finalText = '', sendAfterStop = false;
+function startMic(){
+  if(!SR){ toast('このブラウザは音声入力に非対応です。Chrome か Edge で開いてください', 6000); return; }
+  if(window.speechSynthesis) speechSynthesis.cancel();
+  rec = new SR(); rec.lang = 'ja-JP'; rec.continuous = true; rec.interimResults = true;
+  const inp = $('input');
+  baseText = inp.value ? inp.value.replace(/\s*$/,' ') : ''; finalText = '';
+  rec.onresult = e => {
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i]; if(r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+    }
+    inp.value = baseText + finalText + interim; autoGrow();
+  };
+  rec.onerror = e => {
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      listening = false; sendAfterStop = false; micUI();
+      toast('マイクが許可されていません。ブラウザの設定でこのサイトのマイクを許可してください（iPhoneは設定→Safari→マイク）', 8000);
+    }else if(e.error !== 'no-speech' && e.error !== 'aborted'){ toast('音声認識エラー: ' + e.error); }
+  };
+  rec.onend = () => {
+    if(listening){ baseText = $('input').value; finalText = ''; try{ rec.start(); }catch(e){} return; }
+    micUI();
+    if(sendAfterStop){ sendAfterStop = false; if($('input').value.trim()) sendFromInput(); }
+  };
+  listening = true;
+  try{ rec.start(); }catch(e){ listening = false; toast('音声入力を開始できません: ' + e.message); }
+  micUI();
+}
+function stopMic(){
+  listening = false; sendAfterStop = state.settings.autoSendVoice;
+  try{ rec && rec.stop(); }catch(e){}
+  micUI();
+}
+function micUI(){ const b = $('micBtn'); b.classList.toggle('on', listening); b.title = listening ? '音声入力を止める' : '音声入力'; $('hint').textContent = listening ? '🎤 聞き取り中…もう一度押すと停止' + (state.settings.autoSendVoice ? 'して送信' : '') : 'Enterで送信 / Shift+Enterで改行 / 🎤で音声入力'; }
+function speak(t){
+  if(!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const clean = t.replace(/https?:\/\/\S+/g,'').replace(/[#*`>_|\[\]]/g,'').replace(/【(公式|報道|口コミ|推測)】/g,'');
+  const u = new SpeechSynthesisUtterance(clean); u.lang = 'ja-JP'; u.rate = 1.1;
+  speechSynthesis.speak(u);
+}
+
+// ---------- settings ----------
+function fillModelSelect(){
+  const s = state.settings; const list = s.models && s.models.length ? s.models : [s.model];
+  $('model').innerHTML = list.map(n => `<option ${n===s.model?'selected':''}>${esc(n)}</option>`).join('');
+}
+function openSettings(){
+  const s = state.settings;
+  $('apiKey').value = s.apiKey; $('useSearch').checked = s.useSearch; $('useUrl').checked = s.useUrl;
+  $('autoSendVoice').checked = s.autoSendVoice; $('profile').value = s.profile; fillModelSelect();
+  $('settingsModal').classList.add('show');
+}
+async function saveSettings(){
+  const s = state.settings; const keyChanged = s.apiKey !== $('apiKey').value.trim();
+  s.apiKey = $('apiKey').value.trim(); s.model = $('model').value || s.model;
+  s.useSearch = $('useSearch').checked; s.useUrl = $('useUrl').checked; if(s.useUrl) urlToolDisabled = false;
+  s.autoSendVoice = $('autoSendVoice').checked; s.profile = $('profile').value;
+  save(); $('settingsModal').classList.remove('show');
+  if(keyChanged && s.apiKey) await refreshModels(false);
+  render(); micUI();
+}
+
+// ---------- events ----------
+$('newBtn').onclick = () => { newSession($('newName').value); $('newName').value = ''; };
+$('newName').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing){ newSession(e.target.value); e.target.value = ''; } });
+$('list').onclick = e => {
+  const d = e.target.closest('[data-del]');
+  if(d){ e.stopPropagation(); const s = state.sessions.find(x => x.id === d.dataset.del);
+    if(s && confirm(`「${s.company}」の壁打ち記録を削除しますか？`)){ state.sessions = state.sessions.filter(x => x !== s); if(state.currentId === s.id) state.currentId = null; save(); render(); } return; }
+  const it = e.target.closest('.item'); if(it && !busy){ state.currentId = it.dataset.id; save(); render(); $('side').classList.remove('open'); }
+};
+$('chips').onclick = e => { const c = e.target.closest('.chip'); if(c && !busy && cur() && cur().status === 'ok') send(`「${TOPICS[+c.dataset.i].name}」の観点に進みたい。`); };
+$('quick').onclick = e => { const b = e.target.closest('[data-q]'); if(b && !busy) send(b.dataset.q); };
+$('sendBtn').onclick = () => { if(busy){ abortCtl && abortCtl.abort(); return; } if(listening){ listening = false; try{ rec.stop(); }catch(e){} micUI(); } sendFromInput(); };
+$('input').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); if(listening){ listening = false; try{ rec.stop(); }catch(_){} micUI(); } sendFromInput(); } });
+function autoGrow(){ const t = $('input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 220) + 'px'; }
+$('input').addEventListener('input', autoGrow);
+$('micBtn').onclick = () => listening ? stopMic() : startMic();
+$('ttsBtn').onclick = () => { state.settings.tts = !state.settings.tts; if(!state.settings.tts && window.speechSynthesis) speechSynthesis.cancel(); save(); render(); };
+$('settingsBtn').onclick = openSettings;
+$('closeSettings').onclick = () => $('settingsModal').classList.remove('show');
+$('saveSettings').onclick = saveSettings;
+$('showKey').onclick = () => { const k = $('apiKey'); k.type = k.type === 'password' ? 'text' : 'password'; };
+$('refreshModels').onclick = async () => { state.settings.apiKey = $('apiKey').value.trim(); save(); await refreshModels(false); };
+$('resetProfile').onclick = () => { if(confirm('プロフィールを初期状態に戻しますか？（追記した内容は消えます）')) $('profile').value = DEFAULT_PROFILE; };
+const profileEmpty = () => state.settings.profile.replace(/■[^\n]*/g,'').trim().length < 20;
+$('shareBtn').onclick = () => { if(!cur()){ toast('企業を選んでください'); return; } showNotes(); $('shareModal').classList.add('show'); };
+$('closeShare').onclick = () => $('shareModal').classList.remove('show');
+$('genNotes').onclick = genNotes;
+$('copyNotes').onclick = async () => { const s = cur(); if(!s || !s.notes) return toast('先にメモを作ってください'); try{ await navigator.clipboard.writeText(CLAUDE_HEAD + s.notes); toast('コピーしました。Claudeのチャットに貼り付けてください'); }catch(e){ toast('コピーできませんでした。.mdで保存してください'); } };
+$('dlNotes').onclick = () => { const s = cur(); if(!s || !s.notes) return toast('先にメモを作ってください'); download(`Claude共有_${safeName(s.company)}_${stamp()}.md`, CLAUDE_HEAD + s.notes); };
+$('toProfile').onclick = appendToProfile;
+$('shareAllBtn').onclick = () => {
+  const ss = state.sessions.filter(s => s.notes);
+  if(!ss.length) return toast('共有メモがある企業がありません（各企業の「Claudeに共有」で作成）', 5000);
+  download(`Claude共有_全企業_${stamp()}.md`, CLAUDE_HEAD + ss.map(s => s.notes).join('\n\n---\n\n'));
+};
+$('exportBtn').onclick = () => { const copy = JSON.parse(JSON.stringify(state)); copy.settings.apiKey = ''; download(`壁打ちAI_バックアップ_${stamp()}.json`, JSON.stringify(copy, null, 1), 'application/json'); };
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const d = JSON.parse(await f.text()); if(!Array.isArray(d.sessions)) throw new Error('形式が違います');
+    const ids = new Set(state.sessions.map(s => s.id)); let n = 0;
+    for(const s of d.sessions) if(!ids.has(s.id)){ state.sessions.push(s); n++; }
+    if(d.settings && d.settings.profile && confirm('バックアップのプロフィールで置き換えますか？')) state.settings.profile = d.settings.profile;
+    save(); render(); toast(n + '件の企業を復元しました');
+  }catch(err){ toast('復元に失敗: ' + err.message); }
+  e.target.value = '';
+};
+$('menuBtn').onclick = () => $('side').classList.toggle('open');
+$('scrim').onclick = () => $('side').classList.remove('open');
+for(const id of ['settingsModal','shareModal']) $(id).addEventListener('click', e => { if(e.target.id === id) $(id).classList.remove('show'); });
+
+// clean up messages left pending by a reload
+for(const s of state.sessions) for(const m of s.messages) if(m.pending){ m.pending = false; if(!m.text) m.error = '中断されました'; }
+if(state.settings.models && state.settings.models.length) state.settings.models = rankModels(state.settings.models);
+render(); micUI();
+if(!state.settings.apiKey) openSettings();
+</script>
+</body>
+</html>
