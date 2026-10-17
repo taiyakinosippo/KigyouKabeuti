@@ -70,6 +70,8 @@ a{color:#7cc4ff}
 .sources{margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);font-size:12px}
 .sources a{display:inline-block;margin:2px 8px 2px 0;color:#7cc4ff;text-decoration:none}
 .sources a:hover{text-decoration:underline}
+.pages{margin-top:6px;font-size:12px;white-space:normal}
+.pages a{display:block;color:#a9d4ff;text-decoration:none}
 .sys{max-width:860px;margin:0 auto 14px;text-align:center;font-size:12px;color:var(--muted)}
 .err{color:var(--danger);font-size:13px;white-space:pre-wrap}
 .banner{max-width:860px;margin:0 auto 14px;padding:10px 14px;border-radius:10px;border:1px solid #ff6b6b77;background:#ff6b6b14;color:#ffc9c9}
@@ -160,7 +162,7 @@ a{color:#7cc4ff}
     </div>
     <div class="composer" id="composer" hidden>
       <div class="inbox">
-        <textarea id="input" rows="1" placeholder="あなたの意見を入力（🎤で音声入力）"></textarea>
+        <textarea id="input" rows="1" placeholder="意見を入力（🎤で音声入力／URLを貼るとページを読み込み）"></textarea>
         <button class="mic" id="micBtn" title="音声入力">🎤</button>
         <button class="btn primary" id="sendBtn">送信</button>
       </div>
@@ -193,8 +195,8 @@ a{color:#7cc4ff}
     </div>
     <div class="field">
       <label>調査ツール</label>
-      <div class="check"><input type="checkbox" id="useSearch"><span>Google検索で調べる（評判・ニュース・作品など）</span></div>
-      <div class="check"><input type="checkbox" id="useUrl"><span>Webページを直接読む（公式サイトの文章など。モデルが非対応なら自動でOFF）</span></div>
+      <div class="check"><input type="checkbox" id="useSearch"><span>Google検索で調べる（※無料枠では使えません。課金設定済みのAPIキーのみ）</span></div>
+      <div class="check"><input type="checkbox" id="useUrl"><span>GeminiにWebページを直接読ませる（※同上。無料でもチャットにURLを貼ればページを読み込めます）</span></div>
     </div>
     <div class="field">
       <label>音声</label>
@@ -284,7 +286,7 @@ function load(){
   return normalize({});
 }
 function normalize(s){
-  s.settings = Object.assign({apiKey:'', model:'gemini-3.5-flash', models:[], useSearch:true, useUrl:true, autoSendVoice:false, tts:false, profile:DEFAULT_PROFILE, noFree:[]}, s.settings||{});
+  s.settings = Object.assign({apiKey:'', model:'gemini-3.5-flash', models:[], useSearch:false, useUrl:false, autoSendVoice:false, tts:false, profile:DEFAULT_PROFILE, noFree:[]}, s.settings||{});
   s.sessions = s.sessions || [];
   return s;
 }
@@ -350,11 +352,14 @@ ${state.settings.profile}`;
 }
 const NOSEARCH_RULE = `
 
-# 【今回だけの緊急ルール】検索ツールが使えない
-- 今回は検索もWebページ読み込みもできない。【公式】【報道】【口コミ】ラベルは使用禁止。事実はすべて【未確認】ラベルにする。
-- 人名・作品名・年号・数字など、確信のない固有情報は書かない。曖昧なら「公式サイトで要確認」と書く。
-- 社名の由来・理念・方針など公式サイトの文言は推測で作らない。代わりにユーザーに「公式サイトの該当ページの文章を貼ってくれれば分析する」と頼む。`;
-const kickoff = name => `企業名「${name}」で企業研究の壁打ちを始めたい。まずゲーム企業かどうか確認して。ゲーム企業なら、2〜3文の企業概要のあと、最初の観点を提示して私に問いかけて。`;
+# 【優先ルール】今回は検索ツールが使えない
+- 検索もWebページ読み込みツールも使えない。上の「必ずGoogle検索で」の指示はこのルールで置き換える。
+- 情報源として使ってよいのは、ユーザーのメッセージに添付された【取得ページ】の本文と、ユーザーが貼った文章だけ。そこから引いた事実には、公式サイト・採用ページなら【公式】、ニュース記事なら【報道】、口コミサイトなら【口コミ】を付け、どのページ（タイトル）からかを短く示す。
+- それ以外のあなたの知識から書く事実は必ず【未確認】ラベルにする。人名・作品名・年号・数字など確信のない固有情報は書かない。
+- 社名の由来・理念・方針など公式の文言は、取得ページにない限り絶対に作らない。
+- ゲーム企業かどうかは知識で判定してよいが、確信がなければ1行目を [AMBIGUOUS] にして公式サイトのURLを求める。
+- 情報が足りない観点では、調べるべきページ（例：公式サイトの企業理念ページ、採用ページ、社員インタビュー、ニュース記事、口コミサイト）を具体的に挙げ、そのURLを貼るようユーザーに頼む。`;
+const kickoff = name => `企業名「${name}」で企業研究の壁打ちを始めたい。まずゲーム企業かどうか確認して。ゲーム企業なら、2〜3文の企業概要のあと、最初の観点を提示して私に問いかけて。` + (state.settings.useSearch ? '' : '今は検索が使えないので、最後に、公式サイト（企業理念ページ）と新卒採用ページのURLを貼るよう私に頼んで。');
 
 const NOTES_SYS = `あなたは議事録係。以下の「壁打ちログ」から、別のAIアシスタント（Claude）に引き継ぐための共有メモをMarkdownで作る。
 厳守：
@@ -377,9 +382,10 @@ function buildContents(msgs){
   for(const m of msgs){
     if(m.role === 'model' && (m.error || m.pending)) continue;
     if(!m.text) continue;
+    const txt = m.text + (m.pageText ? '\n\n' + m.pageText : '');
     const last = out[out.length-1];
-    if(last && last.role === m.role) last.parts[0].text += '\n\n' + m.text;
-    else out.push({role:m.role, parts:[{text:m.text}]});
+    if(last && last.role === m.role) last.parts[0].text += '\n\n' + txt;
+    else out.push({role:m.role, parts:[{text:txt}]});
   }
   return out;
 }
@@ -478,6 +484,27 @@ async function probeModels(){
   out.textContent = (firstOk ? '→ ' + firstOk + ' を使用します\n\n' : '→ 今すぐ使えるモデルはありません\n\n') + res.join('\n');
 }
 
+// ---------- page reader (Jina Reader: 無料・キー不要) ----------
+const READER = 'https://r.jina.ai/';
+const MAX_PAGE = 12000;
+const URL_RE = /https?:\/\/[^\s<>"'（）「」]+/g;
+async function fetchPage(url){
+  try{
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 30000);
+    const r = await fetch(READER + url, {signal:ctl.signal}); clearTimeout(tm);
+    if(!r.ok) throw new Error('HTTP ' + r.status + (r.status === 429 ? '（読み込み回数の上限。1分待って再送）' : ''));
+    const t = await r.text();
+    const title = ((t.match(/^Title:\s*(.+)$/m) || [])[1] || url).trim();
+    const parts = t.split(/Markdown Content:\s*/);
+    const body = (parts.length > 1 ? parts.slice(1).join('') : t)
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    if(!body) throw new Error('本文が空でした');
+    return {ok:true, url, title, text: body.length > MAX_PAGE ? body.slice(0, MAX_PAGE) + '\n…（以下省略）' : body};
+  }catch(e){
+    return {ok:false, url, error: e.name === 'AbortError' ? 'タイムアウト' : (e.message === 'Failed to fetch' ? '読み込みサービスに接続できません' : e.message)};
+  }
+}
+
 // ---------- chat ----------
 const STATUS_RE = /^\s*\[(NOT_GAME|GAME_OK|AMBIGUOUS)\]\s*/;
 const TOPIC_RE = /\n?\s*【観点[:：]\s*([^】]+)】\s*$/;
@@ -497,10 +524,23 @@ async function send(text, opt={}){
   if(s.status === 'excluded'){ toast('ゲーム企業ではないため、この企業は対象外です'); return; }
   if(!state.settings.apiKey){ openSettings(); toast('APIキーを設定してください'); return; }
   speechSynthesis && speechSynthesis.cancel();
-  s.messages.push({role:'user', text, hidden:!!opt.hidden, label:opt.label||null, ts:Date.now()});
+  const um = {role:'user', text, hidden:!!opt.hidden, label:opt.label||null, ts:Date.now()};
+  s.messages.push(um);
   const m = {role:'model', text:'', sources:[], ts:Date.now(), pending:true};
   s.messages.push(m); s.updatedAt = Date.now();
   busy = true; render();
+  if(!um.hidden){
+    const urls = [...new Set((text.match(URL_RE) || []).map(u => u.replace(/[.,。、]+$/, '')))].slice(0, 3);
+    if(urls.length){
+      toast('ページを読み込み中…（' + urls.length + '件）');
+      um.pages = await Promise.all(urls.map(fetchPage));
+      const okP = um.pages.filter(p => p.ok), ngP = um.pages.filter(p => !p.ok);
+      um.pageText = okP.map(p => `【取得ページ】${p.title}\nURL: ${p.url}\n${p.text}`).join('\n\n---\n\n')
+        + (ngP.length ? '\n\n' + ngP.map(p => `（${p.url} は読み込めなかった：${p.error}）`).join('\n') : '');
+      um.pages = um.pages.map(p => ({ok:p.ok, url:p.url, title:p.title, error:p.error}));
+      render();
+    }
+  }
   const S = state.settings;
   if(!S.models.length) await refreshModels(true);
   const usable = n => !S.noFree.includes(n) && !/^gemini-[12]\./.test(n) && !/pro/.test(n);
@@ -516,7 +556,7 @@ async function send(text, opt={}){
     if(dead.has(a.model)) continue;
     m.text = ''; abortCtl = new AbortController();
     try{
-      const r = await callGemini({model:a.model, system:systemPrompt(s) + (full.length && !a.tools.length ? NOSEARCH_RULE : ''), contents:buildContents(s.messages), tools:a.tools, signal:abortCtl.signal,
+      const r = await callGemini({model:a.model, system:systemPrompt(s) + (!a.tools.length ? NOSEARCH_RULE : ''), contents:buildContents(s.messages), tools:a.tools, signal:abortCtl.signal,
         onText: t => { m.text += t; updateBubble(m); }});
       m.sources = r.sources; ok = a; break;
     }catch(e){
@@ -533,6 +573,10 @@ async function send(text, opt={}){
     if(S.model !== ok.model){ S.model = ok.model; toast(ok.model + ' で回答しました'); }
     if(ok.note) m.note = ok.note + (log.length ? '\n（失敗した試行）\n' + log.join('\n') : '');
     if(ok.tools.length < full.length && ok.tools.length) urlToolDisabled = true;
+    if(full.length && !ok.tools.length && log.length && log.every(l => l.includes('429'))){
+      S.useSearch = false; S.useUrl = false;
+      m.note = '⚠ このAPIキー（無料枠）では検索ツールが使えないため、検索をOFFにしました（設定で戻せます）。公式サイトや記事のURLを貼ると本文を読み込んで分析します。';
+    }
   }else if(!ok){
     let hint = '';
     if(log.some(l => l.includes('429'))) hint = '\n→ 上限到達の可能性。時間をおくか、設定の「モデル診断」を実行してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
@@ -575,7 +619,7 @@ function render(){
       <ol>
         <li>初回は「設定」で Gemini APIキー（無料）を入れる</li>
         <li>企業名を入れて開始（ゲーム企業以外は対象外として止まります）</li>
-        <li>🎤 で話しかけてもOK</li>
+        <li>🎤 で話しかけてもOK。公式サイトや記事のURLを貼ると本文を読み込んで分析します</li>
         <li>終わったら「Claudeに共有」でメモを作り、.md を Claude のチャットに添付</li>
       </ol>
       ${state.settings.apiKey ? '' : '<p><button class="btn primary" onclick="openSettings()">APIキーを設定する</button></p>'}
@@ -592,7 +636,7 @@ function render(){
   for(const m of s.messages){
     if(m.role === 'user'){
       if(m.hidden) html += `<div class="sys">${esc(m.label || '（指示を送信）')}</div>`;
-      else html += `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+      else html += `<div class="msg user"><div class="bubble">${esc(m.text)}${m.pages ? `<div class="pages">${m.pages.map(p => p.ok ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">📄 読み込み済み：${esc(p.title)}</a>` : `<span class="err">⚠ 読み込み失敗：${esc(p.url)}（${esc(p.error)}）→ 本文をコピーして貼ってください</span>`).join('')}</div>` : ''}</div></div>`;
     }else{
       html += `<div class="msg model"><div class="bubble" data-ts="${m.ts}">${modelInner(m)}</div></div>`;
     }
