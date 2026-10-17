@@ -186,7 +186,9 @@ a{color:#7cc4ff}
       <div class="row">
         <select id="model" style="flex:1"></select>
         <button class="btn small" id="refreshModels">一覧を取得</button>
+        <button class="btn small" id="probeBtn">モデル診断</button>
       </div>
+      <pre id="probeOut" class="hint" style="white-space:pre-wrap;margin:6px 0 0;max-height:200px;overflow:auto"></pre>
       <div class="hint">上限エラー(429)が出たモデルは自動で次のモデルに切り替わります。Geminiアプリの学生プランはAPIの無料枠とは別枠です。</div>
     </div>
     <div class="field">
@@ -236,12 +238,13 @@ const LS_KEY = 'gameco-kabeuchi-v1';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 // 自動選択の優先順：flash（新しい版から）→ flash-lite → その他。preview/exp は後回し、pro は最後
 function rankModels(names){
-  const ver = n => { const m = n.match(/gemini-(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : (n.includes('latest') ? 99 : 0); };
+  const ver = n => { const m = n.match(/gemini-(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : 0; };
   const cls = n => /pro/.test(n) ? 3 : /flash-lite/.test(n) ? 1 : /flash/.test(n) ? 0 : 2;
-  const pre = n => /(preview|exp)/.test(n) ? 1 : 0;
+  const pre = n => /latest/.test(n) ? 2 : /(preview|exp)/.test(n) ? 1 : 0;
   return [...names].sort((a,b) => cls(a)-cls(b) || pre(a)-pre(b) || ver(b)-ver(a) || a.localeCompare(b));
 }
 const failedModels = new Set();
+const isNoFree = msg => /limit:\s*0\b/.test(msg);
 const TOPICS = [
   {name:'概要・理念', keys:['概要','理念','ビジョン','ミッション']},
   {name:'作品・開発体制', keys:['作品','タイトル','開発体制','ジャンル']},
@@ -281,7 +284,7 @@ function load(){
   return normalize({});
 }
 function normalize(s){
-  s.settings = Object.assign({apiKey:'', model:'gemini-3.5-flash', models:[], useSearch:true, useUrl:true, autoSendVoice:false, tts:false, profile:DEFAULT_PROFILE}, s.settings||{});
+  s.settings = Object.assign({apiKey:'', model:'gemini-3.5-flash', models:[], useSearch:true, useUrl:true, autoSendVoice:false, tts:false, profile:DEFAULT_PROFILE, noFree:[]}, s.settings||{});
   s.sessions = s.sessions || [];
   return s;
 }
@@ -436,11 +439,37 @@ async function refreshModels(silent){
       .filter(n => n.startsWith('gemini') && !/(image|tts|embed|live|audio|native|robotics|computer)/.test(n));
     if(!names.length) throw new Error('使えるモデルが見つかりません');
     s.models = rankModels(names);
-    if(!names.includes(s.model)) s.model = s.models[0];
+    if(!names.includes(s.model) || s.noFree.includes(s.model)) s.model = s.models.find(n => !s.noFree.includes(n)) || s.models[0];
     save(); fillModelSelect();
     if(!silent) toast('モデル一覧を更新しました（' + names.length + '件）');
     return true;
   }catch(e){ if(!silent) toast('モデル一覧の取得に失敗: ' + e.message, 6000); return false; }
+}
+
+async function probeModels(){
+  const s = state.settings, out = $('probeOut');
+  if(!s.apiKey){ toast('先にAPIキーを入力してください'); return; }
+  if(!s.models.length && !(await refreshModels(true))){ out.textContent = 'モデル一覧を取得できませんでした'; return; }
+  const btn = $('probeBtn'); btn.disabled = true;
+  const res = []; let firstOk = null;
+  for(const n of s.models){
+    out.textContent = '診断中… ' + n + '\n' + res.join('\n');
+    try{
+      const r = await fetch(`${API}/models/${encodeURIComponent(n)}:generateContent`, {method:'POST',
+        headers:{'Content-Type':'application/json','x-goog-api-key':s.apiKey},
+        body: JSON.stringify({contents:[{role:'user',parts:[{text:'「OK」とだけ返して'}]}], generationConfig:{maxOutputTokens:20}})});
+      if(r.ok){ res.push('✅ ' + n); if(!firstOk) firstOk = n; s.noFree = s.noFree.filter(x => x !== n); }
+      else{
+        const t = await r.text(); let msg = t; try{ msg = JSON.parse(t).error.message; }catch(e){}
+        if(r.status === 429 && isNoFree(msg)){ res.push('🚫 ' + n + '（無料枠なし）'); if(!s.noFree.includes(n)) s.noFree.push(n); }
+        else if(r.status === 429) res.push('⏳ ' + n + '（上限到達・時間をおけば可）');
+        else res.push('❌ ' + n + '（' + r.status + '）');
+      }
+    }catch(e){ res.push('❌ ' + n + '（通信エラー）'); }
+  }
+  if(firstOk){ s.model = firstOk; failedModels.clear(); }
+  save(); fillModelSelect(); btn.disabled = false;
+  out.textContent = (firstOk ? '→ ' + firstOk + ' を使用します\n\n' : '→ 今すぐ使えるモデルはありません\n\n') + res.join('\n');
 }
 
 // ---------- chat ----------
@@ -475,14 +504,16 @@ async function send(text, opt={}){
     }catch(e){
       if(e.name === 'AbortError'){ m.text += m.text ? '\n\n（停止しました）' : ''; if(!m.text) m.error = '停止しました'; return; }
       if(!m.text && e.status === 400 && state.settings.useUrl && !urlToolDisabled){ urlToolDisabled = true; toast('このモデルはWebページ直接読み込みに非対応のため、検索のみで続けます'); return run(retry + 1); }
-      if(!m.text && (e.status === 429 || e.status === 404) && retry < 6){
-        failedModels.add(state.settings.model);
-        if(!state.settings.models.length) await refreshModels(true);
-        const next = state.settings.models.find(n => !failedModels.has(n));
+      if(!m.text && (e.status === 429 || e.status === 404) && retry < 40){
+        const S = state.settings;
+        failedModels.add(S.model);
+        if(e.status === 404 || isNoFree(e.message)){ if(!S.noFree.includes(S.model)) S.noFree.push(S.model); }
+        if(!S.models.length) await refreshModels(true);
+        const next = S.models.find(n => !failedModels.has(n) && !S.noFree.includes(n));
         if(next){ state.settings.model = next; save(); toast('上限/非対応のため ' + next + ' に切り替えて再試行'); return run(retry + 1); }
       }
       let hint = '';
-      if(e.status === 429) hint = '\n→ 使えるモデルすべてで無料枠の上限に達しました。1分〜1日待つか、AI Studioで課金設定（Tier 1）を検討してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
+      if(e.status === 429) hint = '\n→ 無料で通るモデルが見つかりませんでした。設定の「モデル診断」で確認してください。または上限到達のため1分〜1日待つか、AI Studioで課金設定（Tier 1）を検討してください。※Geminiアプリの学生プランはAPIの枠とは別です。';
       else if(e.status === 400 || e.status === 403) hint = '\n→ APIキーやモデル設定を確認してください。';
       else if(e.message.includes('Failed to fetch')) hint = '\n→ ネット接続を確認してください。';
       m.error = e.message + hint;
@@ -667,7 +698,7 @@ function speak(t){
 // ---------- settings ----------
 function fillModelSelect(){
   const s = state.settings; const list = s.models && s.models.length ? s.models : [s.model];
-  $('model').innerHTML = list.map(n => `<option ${n===s.model?'selected':''}>${esc(n)}</option>`).join('');
+  $('model').innerHTML = list.map(n => `<option value="${esc(n)}" ${n===s.model?'selected':''}>${esc(n)}${s.noFree.includes(n)?'（無料枠なし）':''}</option>`).join('');
 }
 function openSettings(){
   const s = state.settings;
@@ -706,6 +737,7 @@ $('settingsBtn').onclick = openSettings;
 $('closeSettings').onclick = () => $('settingsModal').classList.remove('show');
 $('saveSettings').onclick = saveSettings;
 $('showKey').onclick = () => { const k = $('apiKey'); k.type = k.type === 'password' ? 'text' : 'password'; };
+$('probeBtn').onclick = async () => { state.settings.apiKey = $('apiKey').value.trim(); save(); await probeModels(); };
 $('refreshModels').onclick = async () => { state.settings.apiKey = $('apiKey').value.trim(); save(); await refreshModels(false); };
 $('resetProfile').onclick = () => { if(confirm('プロフィールを初期状態に戻しますか？（追記した内容は消えます）')) $('profile').value = DEFAULT_PROFILE; };
 const profileEmpty = () => state.settings.profile.replace(/■[^\n]*/g,'').trim().length < 20;
